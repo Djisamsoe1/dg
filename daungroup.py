@@ -10,7 +10,7 @@
         ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
         ┃  🔥 ADVANCED PENETRATION TESTING FRAMEWORK 🔥           ┃
         ┃  👑 DAUNGROUP - Elite Security Research Team 👑         ┃
-        ┃  Version: 2.0 AGGRESSIVE | Build: ULTIMATE              ┃
+        ┃  Version: 2.0 FIXED | Build: STABLE                     ┃
         ┃  ⚠️  FOR AUTHORIZED TARGETS ONLY - USE RESPONSIBLY ⚠️   ┃
         ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 """
@@ -31,23 +31,37 @@ from urllib.parse import urlparse, urljoin, quote, parse_qs
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess
-import itertools
 
+# Install dependencies if needed
 try:
     import dns.resolver
+    import dns.zone
+    import dns.query
 except ImportError:
     print("[!] Installing dnspython...")
     os.system("pip3 install dnspython --quiet")
     import dns.resolver
+    import dns.zone
+    import dns.query
 
 # Disable SSL warnings
-requests.packages.urllib3.disable_warnings()
+try:
+    requests.packages.urllib3.disable_warnings()
+except:
+    pass
 
 # Color codes
 class C:
-    H = '\033[95m'; B = '\033[94m'; C = '\033[96m'; G = '\033[92m'
-    W = '\033[93m'; F = '\033[91m'; E = '\033[0m'; BOLD = '\033[1m'
-    BLINK = '\033[5m'; UNDER = '\033[4m'
+    H = '\033[95m'
+    B = '\033[94m'
+    C = '\033[96m'
+    G = '\033[92m'
+    W = '\033[93m'
+    F = '\033[91m'
+    E = '\033[0m'
+    BOLD = '\033[1m'
+    BLINK = '\033[5m'
+    UNDER = '\033[4m'
 
 # User agents for stealth
 USER_AGENTS = [
@@ -58,7 +72,7 @@ USER_AGENTS = [
     'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0'
 ]
 
-# Advanced XSS payloads
+# Advanced XSS payloads (FIXED: Removed duplicates)
 XSS_PAYLOADS = [
     "<script>alert('XSS-DAUNGROUP')</script>",
     "<img src=x onerror=alert('DAUNGROUP')>",
@@ -80,23 +94,6 @@ XSS_PAYLOADS = [
     "<embed src=javascript:alert('XSS')>",
     "<form><button formaction=javascript:alert('XSS')>CLICK</button></form>",
     "<math><mi//xlink:href=data:x,<script>alert('XSS')</script>>"
-]
-    "'\"><script>alert(String.fromCharCode(88,83,83))</script>",
-    "<body onload=alert('XSS')>",
-    "<input onfocus=alert('XSS') autofocus>",
-    "<select onfocus=alert('XSS') autofocus>",
-    "<textarea onfocus=alert('XSS') autofocus>",
-    "<keygen onfocus=alert('XSS') autofocus>",
-    "<video><source onerror=alert('XSS')>",
-    "<audio src=x onerror=alert('XSS')>",
-    "<details open ontoggle=alert('XSS')>",
-    "<marquee onstart=alert('XSS')>",
-    "javascript:alert('XSS')",
-    "<isindex type=image src=1 onerror=alert('XSS')>",
-    "<object data=javascript:alert('XSS')>",
-    "<embed src=javascript:alert('XSS')>",
-    "<form><button formaction=javascript:alert('XSS')>",
-    "<math><mi//xlink:href=data:x,<script>alert('XSS')</script>"
 ]
 
 # Advanced SQL Injection payloads
@@ -260,8 +257,8 @@ def subdomain_enum_advanced(domain):
                     ps(f"  Found: {name}.{domain}")
             except:
                 pass
-    except:
-        pass
+    except Exception as e:
+        pi(f"Zone transfer not available: {str(e)[:50]}")
     
     return found
 
@@ -299,11 +296,16 @@ def port_scan_aggressive(target, port_range="1-1000"):
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)
             sock.connect((target, port_info['port']))
-            banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
-            if banner:
-                ph(f"  Banner [{port_info['port']}]: {banner[:100]}")
+            banner_data = sock.recv(1024).decode('utf-8', errors='ignore').strip()
+            if banner_data:
+                ph(f"  Banner [{port_info['port']}]: {banner_data[:100]}")
         except:
             pass
+        finally:
+            try:
+                sock.close()
+            except:
+                pass
     
     return open_ports
 
@@ -670,7 +672,7 @@ def detect_technologies(url):
         pe(f"Error: {e}")
         return []
 
-# ==================== CRAWLER/SPIDER ====================
+# ==================== CRAWLER/SPIDER (FIXED) ====================
 def crawl_website(url, max_pages=50):
     pi(f"Starting web crawler on {url} (max {max_pages} pages)")
     session = create_session()
@@ -688,7 +690,7 @@ def crawl_website(url, max_pages=50):
             continue
         
         try:
-            resp = session.get(current_url, timeout=5, verify=False)False)
+            resp = session.get(current_url, timeout=5, verify=False)
             visited.add(current_url)
             found_urls.append(current_url)
             
@@ -1057,6 +1059,8 @@ def xxe_test(url):
         pi("No XXE vulnerability detected")
     
     return vulnerable
+
+# ==================== REPORT GENERATOR ====================
 def generate_report(data, filename=None):
     if not filename:
         filename = f"DAUNGROUP_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -1177,6 +1181,9 @@ def main_menu():
         print(f"{C.G}[10]{C.E} 🔒 Security Headers Analyzer")
         print(f"{C.G}[11]{C.E} 🔬 Technology Detection")
         print(f"{C.G}[12]{C.E} 🕷️  Web Crawler/Spider")
+        print(f"{C.G}[13]{C.E} 💣 Full Reconnaissance {C.BOLD}{C.F}(ALL TOOLS){C.E}")
+        print(f"{C.G}[14]{C.E} 🎯 Exploit Suggester")
+        print(f"{C.G}[15]{C.E} 📊 Generate Report")
         print(f"{C.G}[16]{C.E} 🔥 Nmap Scanner {C.BOLD}(AGGRESSIVE/STEALTH){C.E}")
         print(f"{C.G}[17]{C.E} 🌐 Nikto Web Scanner {C.BOLD}(FULL SCAN){C.E}")
         print(f"{C.G}[18]{C.E} 💉 SQLMap Integration {C.BOLD}(AUTO EXPLOIT){C.E}")
@@ -1187,9 +1194,6 @@ def main_menu():
         print(f"{C.G}[23]{C.E} 🔌 API Fuzzer {C.BOLD}(REST/GraphQL){C.E}")
         print(f"{C.G}[24]{C.E} 💻 Command Injection Tester")
         print(f"{C.G}[25]{C.E} 📄 XXE Injection Tester")
-        print(f"{C.G}[13]{C.E} 💣 Full Reconnaissance {C.BOLD}{C.F}(ALL TOOLS){C.E}")
-        print(f"{C.G}[14]{C.E} 🎯 Exploit Suggester")
-        print(f"{C.G}[15]{C.E} 📊 Generate Report")
         print(f"{C.G}[00]{C.E} 🚪 Exit")
         
         choice = input(f"\n{C.C}┌─[{C.F}DAUNGROUP{C.C}@{C.G}BugHunter{C.C}]─[{C.W}~{C.C}]\n└──╼ {C.BOLD}${C.E} ")
@@ -1393,7 +1397,7 @@ def main_menu():
                 sys.exit(0)
             
             else:
-                pe("Invalid choice! Please select 0-15")
+                pe("Invalid choice! Please select 00-25")
         
         except KeyboardInterrupt:
             pw("\nOperation cancelled by user")
@@ -1405,7 +1409,7 @@ def main_menu():
 if __name__ == "__main__":
     try:
         # Check if running as root (optional warning)
-        if os.geteuid() != 0:
+        if os.name == 'posix' and os.geteuid() != 0:
             pw("Not running as root - some features may be limited")
             time.sleep(1)
         
