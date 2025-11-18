@@ -1060,6 +1060,283 @@ def xxe_test(url):
     
     return vulnerable
 
+# ==================== PASSWORD LEAK SCANNER ====================
+def password_leak_scanner(url):
+    pi(f"Starting PASSWORD LEAK Scanner on {url}")
+    session = create_session()
+    
+    leaked_passwords = []
+    
+    # Common password exposure files
+    password_files = [
+        'passwords.txt', 'password.txt', 'pass.txt', 'passwd.txt',
+        'users.txt', 'user.txt', 'credentials.txt', 'creds.txt',
+        'backup.sql', 'dump.sql', 'database.sql', 'db.sql',
+        'config.php.bak', 'config.php~', 'config.inc.php',
+        '.env', '.env.backup', '.env.old', '.env.dev', '.env.prod',
+        'wp-config.php.bak', 'wp-config.php~',
+        '.git/config', '.git/logs/HEAD', '.svn/entries',
+        'web.config', 'web.config.bak',
+        '.htpasswd', '.htaccess',
+        'database.yml', 'secrets.yml', 'credentials.yml',
+        'id_rsa', 'id_rsa.pub', 'id_dsa', 'id_dsa.pub',
+        'known_hosts', 'authorized_keys',
+        'phpinfo.php', 'info.php', 'test.php',
+        'README.md', 'CREDENTIALS.md', 'INSTALL.md'
+    ]
+    
+    pi(f"Checking {len(password_files)} potential password exposure points...")
+    
+    def check_password_file(file):
+        test_url = urljoin(url, file)
+        try:
+            resp = session.get(test_url, timeout=5, verify=False)
+            
+            if resp.status_code == 200:
+                content = resp.text.lower()
+                
+                # Password patterns to detect
+                password_patterns = [
+                    r'password["\s:=]+["\']?([^\s"\'<>]{6,})',
+                    r'passwd["\s:=]+["\']?([^\s"\'<>]{6,})',
+                    r'pwd["\s:=]+["\']?([^\s"\'<>]{6,})',
+                    r'pass["\s:=]+["\']?([^\s"\'<>]{6,})',
+                    r'db_password["\s:=]+["\']?([^\s"\'<>]{6,})',
+                    r'database_password["\s:=]+["\']?([^\s"\'<>]{6,})',
+                    r'mysql_password["\s:=]+["\']?([^\s"\'<>]{6,})',
+                    r'api_key["\s:=]+["\']?([^\s"\'<>]{10,})',
+                    r'secret_key["\s:=]+["\']?([^\s"\'<>]{10,})',
+                    r'auth_token["\s:=]+["\']?([^\s"\'<>]{10,})',
+                    r'access_token["\s:=]+["\']?([^\s"\'<>]{10,})',
+                    r'private_key["\s:=]+["\']?([^\s"\'<>]{10,})',
+                ]
+                
+                found_creds = []
+                for pattern in password_patterns:
+                    matches = re.findall(pattern, content, re.IGNORECASE)
+                    if matches:
+                        found_creds.extend(matches)
+                
+                # Check for hardcoded credentials
+                if any(keyword in content for keyword in ['password', 'passwd', 'pwd', 'credential', 'api_key', 'secret']):
+                    if found_creds or 'root' in content or 'admin' in content:
+                        return {
+                            "url": test_url,
+                            "file": file,
+                            "status": "CRITICAL",
+                            "credentials_found": len(found_creds),
+                            "sample": found_creds[:3] if found_creds else [],
+                            "size": len(resp.content)
+                        }
+        except:
+            pass
+        return None
+    
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(check_password_file, f) for f in password_files]
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                pe(f"PASSWORD LEAK FOUND!")
+                pw(f"  File: {result['file']}")
+                pw(f"  URL: {result['url']}")
+                pw(f"  Credentials Found: {result['credentials_found']}")
+                if result['sample']:
+                    pw(f"  Sample: {result['sample'][0][:20]}...")
+                leaked_passwords.append(result)
+    
+    return leaked_passwords
+
+# ==================== SENSITIVE DATA SCANNER ====================
+def sensitive_data_scanner(url):
+    pi(f"Starting SENSITIVE DATA Scanner on {url}")
+    session = create_session()
+    
+    sensitive_findings = []
+    
+    # Patterns for sensitive data
+    sensitive_patterns = {
+        "Email": r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+        "Phone": r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',
+        "Credit Card": r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b',
+        "SSN": r'\b\d{3}-\d{2}-\d{4}\b',
+        "API Key": r'(api[_-]?key|apikey)["\s:=]+["\']?([a-zA-Z0-9_\-]{20,})',
+        "AWS Key": r'AKIA[0-9A-Z]{16}',
+        "Private Key": r'-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----',
+        "JWT Token": r'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+',
+        "Database String": r'(mongodb|mysql|postgresql|mssql):\/\/[^\s<>"]+',
+    }
+    
+    try:
+        resp = session.get(url, timeout=10, verify=False)
+        content = resp.text
+        
+        for data_type, pattern in sensitive_patterns.items():
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            if matches:
+                unique_matches = list(set(matches))[:5]  # Limit to 5 samples
+                ps(f"Found {data_type}: {len(matches)} occurrences")
+                sensitive_findings.append({
+                    "type": data_type,
+                    "count": len(matches),
+                    "samples": unique_matches
+                })
+        
+        # Check HTML comments for sensitive info
+        comments = re.findall(r'<!--(.*?)-->', content, re.DOTALL)
+        for comment in comments:
+            if any(keyword in comment.lower() for keyword in ['password', 'todo', 'fixme', 'hack', 'temp']):
+                pw(f"Suspicious comment found: {comment[:100]}")
+                sensitive_findings.append({
+                    "type": "Suspicious Comment",
+                    "content": comment[:200]
+                })
+        
+    except Exception as e:
+        pe(f"Error: {e}")
+    
+    return sensitive_findings
+
+# ==================== BACKUP FILE SCANNER ====================
+def backup_file_scanner(url):
+    pi(f"Starting BACKUP FILE Scanner on {url}")
+    session = create_session()
+    
+    # Get base filename from URL
+    parsed = urlparse(url)
+    path = parsed.path
+    base_name = path.split('/')[-1] if path else 'index'
+    
+    if not base_name or base_name == '/':
+        base_name = 'index'
+    
+    # Generate backup file variations
+    backup_extensions = [
+        '.bak', '.backup', '.old', '.orig', '.save', '.swp', '.tmp',
+        '~', '.1', '.2', '_backup', '_old', '_bak', '.BAK', '.BACKUP'
+    ]
+    
+    backup_files = []
+    
+    # Add common backup files
+    common_backups = [
+        'backup.zip', 'backup.tar.gz', 'backup.sql', 'dump.sql',
+        'database.sql', 'db_backup.sql', 'site_backup.zip',
+        'www.zip', 'public_html.zip', 'htdocs.zip',
+        'backup.tar', 'backup.rar', 'site.zip'
+    ]
+    
+    # Generate variations
+    for ext in backup_extensions:
+        backup_files.append(base_name + ext)
+        if '.' in base_name:
+            name, orig_ext = base_name.rsplit('.', 1)
+            backup_files.append(f"{name}{ext}.{orig_ext}")
+            backup_files.append(f"{base_name}{ext}")
+    
+    backup_files.extend(common_backups)
+    
+    found_backups = []
+    
+    def check_backup(file):
+        test_url = urljoin(url, file)
+        try:
+            resp = session.get(test_url, timeout=5, verify=False, stream=True)
+            if resp.status_code == 200:
+                size = int(resp.headers.get('content-length', 0))
+                if size > 0:
+                    return {
+                        "url": test_url,
+                        "file": file,
+                        "size": size,
+                        "content_type": resp.headers.get('content-type', 'unknown')
+                    }
+        except:
+            pass
+        return None
+    
+    pi(f"Checking {len(backup_files)} potential backup files...")
+    
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(check_backup, f) for f in backup_files]
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                pw(f"BACKUP FILE FOUND!")
+                ps(f"  File: {result['file']}")
+                ps(f"  URL: {result['url']}")
+                ps(f"  Size: {result['size']} bytes")
+                ps(f"  Type: {result['content_type']}")
+                found_backups.append(result)
+    
+    return found_backups
+
+# ==================== ADMIN PANEL FINDER ====================
+def admin_panel_finder(url):
+    pi(f"Starting ADMIN PANEL Finder on {url}")
+    session = create_session()
+    
+    admin_paths = [
+        'admin', 'administrator', 'admin.php', 'admin.html', 'admin/',
+        'login', 'login.php', 'login.html', 'signin', 'signin.php',
+        'wp-admin', 'wp-login.php', 'dashboard', 'panel', 'cpanel',
+        'control', 'controlpanel', 'admin_area', 'adminarea',
+        'admin1', 'admin2', 'admin3', 'admin4', 'admin5',
+        'moderator', 'webadmin', 'adminpanel', 'admin_panel',
+        'sysadmin', 'administration', 'manage', 'manager',
+        'admin_login', 'adminlogin', 'admin_login.php',
+        'backend', 'server', 'server_admin', 'sys', 'system',
+        'user', 'users', 'accounts', 'member', 'members',
+        'cms', 'phpmyadmin', 'pma', 'mysql', 'mysqlmanager',
+        'adminer', 'adminer.php', 'db', 'database',
+        'auth', 'authentication', 'secure', 'security'
+    ]
+    
+    found_panels = []
+    
+    def check_admin_panel(path):
+        test_url = urljoin(url, path)
+        try:
+            resp = session.get(test_url, timeout=5, verify=False, allow_redirects=True)
+            
+            # Check for admin panel indicators
+            admin_indicators = [
+                'login', 'password', 'username', 'user', 'admin',
+                'dashboard', 'panel', 'control', 'authenticate',
+                'signin', 'log in', 'administration'
+            ]
+            
+            content_lower = resp.text.lower()
+            
+            if resp.status_code == 200:
+                indicator_count = sum(1 for indicator in admin_indicators if indicator in content_lower)
+                
+                if indicator_count >= 2:  # At least 2 indicators
+                    return {
+                        "url": test_url,
+                        "path": path,
+                        "status": resp.status_code,
+                        "indicators": indicator_count,
+                        "title": re.search(r'<title>(.*?)</title>', resp.text, re.IGNORECASE)
+                    }
+        except:
+            pass
+        return None
+    
+    with ThreadPoolExecutor(max_workers=30) as executor:
+        futures = [executor.submit(check_admin_panel, p) for p in admin_paths]
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                ps(f"ADMIN PANEL FOUND!")
+                pw(f"  URL: {result['url']}")
+                pw(f"  Confidence: {result['indicators']} indicators")
+                if result['title']:
+                    pw(f"  Title: {result['title'].group(1)[:50]}")
+                found_panels.append(result)
+    
+    return found_panels
+
 # ==================== REPORT GENERATOR ====================
 def generate_report(data, filename=None):
     if not filename:
@@ -1194,6 +1471,10 @@ def main_menu():
         print(f"{C.G}[23]{C.E} 🔌 API Fuzzer {C.BOLD}(REST/GraphQL){C.E}")
         print(f"{C.G}[24]{C.E} 💻 Command Injection Tester")
         print(f"{C.G}[25]{C.E} 📄 XXE Injection Tester")
+        print(f"{C.G}[26]{C.E} 🔑 Password Leak Scanner {C.BOLD}{C.F}(CRITICAL!){C.E}")
+        print(f"{C.G}[27]{C.E} 📊 Sensitive Data Scanner")
+        print(f"{C.G}[28]{C.E} 💾 Backup File Scanner")
+        print(f"{C.G}[29]{C.E} 🔐 Admin Panel Finder")
         print(f"{C.G}[00]{C.E} 🚪 Exit")
         
         choice = input(f"\n{C.C}┌─[{C.F}DAUNGROUP{C.C}@{C.G}BugHunter{C.C}]─[{C.W}~{C.C}]\n└──╼ {C.BOLD}${C.E} ")
@@ -1314,16 +1595,38 @@ def main_menu():
                 pi("\nPhase 10: SSRF Scanning")
                 results['ssrf'] = ssrf_scan(url)
                 
+                pi("\nPhase 11: Password Leak Scanning")
+                results['password_leaks'] = password_leak_scanner(url)
+                
+                pi("\nPhase 12: Sensitive Data Scanning")
+                results['sensitive_data'] = sensitive_data_scanner(url)
+                
+                pi("\nPhase 13: Backup File Scanning")
+                results['backup_files'] = backup_file_scanner(url)
+                
+                pi("\nPhase 14: Admin Panel Finding")
+                results['admin_panels'] = admin_panel_finder(url)
+                
                 ph("=" * 60)
                 ps("FULL RECONNAISSANCE COMPLETED!")
                 ph("=" * 60)
+                
+                # Critical findings summary
+                if results.get('password_leaks'):
+                    pe(f"\n⚠️  CRITICAL: {len(results['password_leaks'])} PASSWORD LEAK(S) FOUND!")
+                    pe("IMMEDIATE ACTION REQUIRED - Report to website owner!")
                 
                 # Auto-generate report
                 generate_report(results)
                 
                 # Suggest exploits
-                all_vulns = {**results.get('xss', {}), **results.get('sqli', {}), 
-                            **results.get('lfi', {}), **results.get('ssrf', {})}
+                all_vulns = {
+                    **results.get('xss', {}), 
+                    **results.get('sqli', {}), 
+                    **results.get('lfi', {}), 
+                    **results.get('ssrf', {}),
+                    **results.get('password_leaks', {})
+                }
                 suggest_exploits(all_vulns)
             
             elif choice == "14":
@@ -1388,6 +1691,52 @@ def main_menu():
                 url = input(f"{C.C}[?] Enter URL: {C.E}")
                 xxe_test(url)
             
+            elif choice == "26":
+                url = input(f"{C.C}[?] Enter URL: {C.E}")
+                pw("=" * 60)
+                pw("SCANNING FOR PASSWORD LEAKS - CRITICAL SECURITY CHECK")
+                pw("=" * 60)
+                results = password_leak_scanner(url)
+                if results:
+                    pe(f"\n⚠️  CRITICAL: {len(results)} PASSWORD LEAK(S) DETECTED! ⚠️")
+                    pe("This MUST be reported to website owner immediately!")
+                    for leak in results:
+                        print(f"\n{C.F}[LEAK #{results.index(leak)+1}]{C.E}")
+                        print(f"  URL: {leak['url']}")
+                        print(f"  Credentials Found: {leak['credentials_found']}")
+                else:
+                    ps("No password leaks detected")
+            
+            elif choice == "27":
+                url = input(f"{C.C}[?] Enter URL: {C.E}")
+                results = sensitive_data_scanner(url)
+                if results:
+                    pw(f"Found {len(results)} types of sensitive data")
+                    for finding in results:
+                        print(f"\n{C.W}[{finding['type']}]{C.E}")
+                        if 'count' in finding:
+                            print(f"  Count: {finding['count']}")
+                        if 'samples' in finding:
+                            print(f"  Samples: {finding['samples'][:2]}")
+                else:
+                    ps("No sensitive data exposed")
+            
+            elif choice == "28":
+                url = input(f"{C.C}[?] Enter URL: {C.E}")
+                results = backup_file_scanner(url)
+                if results:
+                    pw(f"Found {len(results)} backup file(s)")
+                else:
+                    ps("No backup files found")
+            
+            elif choice == "29":
+                url = input(f"{C.C}[?] Enter URL: {C.E}")
+                results = admin_panel_finder(url)
+                if results:
+                    ps(f"Found {len(results)} potential admin panel(s)")
+                else:
+                    pi("No admin panels found")
+            
             elif choice == "0" or choice == "00":
                 print(f"\n{C.C}╔════════════════════════════════════════════════╗{C.E}")
                 print(f"{C.C}║  {C.G}Thank you for using DAUNGROUP Toolkit!    {C.C}║{C.E}")
@@ -1397,7 +1746,7 @@ def main_menu():
                 sys.exit(0)
             
             else:
-                pe("Invalid choice! Please select 00-25")
+                pe("Invalid choice! Please select 00-29")
         
         except KeyboardInterrupt:
             pw("\nOperation cancelled by user")
